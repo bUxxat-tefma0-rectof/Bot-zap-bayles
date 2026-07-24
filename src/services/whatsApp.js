@@ -6,7 +6,6 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBailey
 const { Boom } = require('@hapi/boom');
 const path = require('path');
 const fs = require('fs');
-const qrcode = require('qrcode-terminal');
 const { config } = require('../config/database');
 const { getDatabase } = require('../database/connection');
 const User = require('../database/models/User');
@@ -40,7 +39,7 @@ async function startWhatsApp() {
         sock = makeWASocket({
             version,
             auth: state,
-            printQRInTerminal: true,
+            printQRInTerminal: false, // NÃO mostrar QR Code
             browser: ['DOGUINHA STORE BOT', 'Chrome', '1.0.0'],
             markOnlineOnConnect: true,
             syncFullHistory: false,
@@ -54,10 +53,9 @@ async function startWhatsApp() {
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            // QR Code para escanear
+            // Se aparecer QR Code, NÃO mostrar (usar pareamento)
             if (qr) {
-                logger.info('📱 Escaneie o QR Code abaixo:');
-                qrcode.generate(qr, { small: true });
+                logger.info('📱 QR Code disponível (ignorado - usando pareamento)');
             }
 
             // Conexão estabelecida
@@ -85,7 +83,7 @@ async function startWhatsApp() {
                     }, delay);
                     
                 } else if (lastDisconnect?.error?.output?.statusCode === DisconnectReason.loggedOut) {
-                    logger.error('❌ Bot desconectado! Escaneie o QR Code novamente.');
+                    logger.error('❌ Bot desconectado! Solicite novo código de pareamento.');
                     // Limpar sessão
                     if (fs.existsSync(sessionPath)) {
                         fs.rmSync(sessionPath, { recursive: true, force: true });
@@ -123,6 +121,9 @@ async function startWhatsApp() {
             }
         });
 
+        // Solicitar código de pareamento automaticamente
+        await requestPairingCode();
+
         return sock;
 
     } catch (error) {
@@ -139,6 +140,64 @@ async function startWhatsApp() {
             }, delay);
         }
     }
+}
+
+// ============================================
+// SOLICITAR CÓDIGO DE PAREAMENTO
+// ============================================
+async function requestPairingCode() {
+    try {
+        const phoneNumber = config.bot.whatsappNumber;
+        
+        if (!phoneNumber) {
+            logger.error('❌ Número do WhatsApp não configurado no .env');
+            return;
+        }
+
+        // Aguardar socket estar pronto
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        if (!sock) {
+            logger.error('❌ Socket não inicializado');
+            return;
+        }
+
+        // Solicitar código de pareamento
+        const code = await sock.requestPairingCode(phoneNumber);
+        
+        logger.info('📱 ===========================================');
+        logger.info('📱 CÓDIGO DE PAREAMENTO GERADO!');
+        logger.info(`📱 CÓDIGO: ${code}`);
+        logger.info('📱 ===========================================');
+        logger.info('📱 INSTRUÇÕES:');
+        logger.info('📱 1. Abra o WhatsApp no celular');
+        logger.info('📱 2. Vá em: Configurações > Aparelhos Conectados > Conectar um Aparelho');
+        logger.info('📱 3. Toque em "Conectar com número de telefone"');
+        logger.info(`📱 4. Digite o código: ${code}`);
+        logger.info('📱 ===========================================');
+
+        return code;
+
+    } catch (error) {
+        logger.error('❌ Erro ao solicitar código de pareamento:', error);
+        
+        // Se falhar, tentar novamente
+        if (error.message && error.message.includes('timeout')) {
+            logger.warn('⚠️ Timeout ao solicitar pareamento. Tentando novamente...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            return await requestPairingCode();
+        }
+        
+        return null;
+    }
+}
+
+// ============================================
+// RENOVAR CÓDIGO DE PAREAMENTO
+// ============================================
+async function renewPairingCode() {
+    logger.info('🔄 Renovando código de pareamento...');
+    return await requestPairingCode();
 }
 
 // ============================================
@@ -205,10 +264,8 @@ async function sendImageMessage(phone, imagePathOrUrl, caption = '') {
         let image;
         
         if (imagePathOrUrl.startsWith('http')) {
-            // URL
             image = { url: imagePathOrUrl };
         } else {
-            // Arquivo local
             image = fs.readFileSync(imagePathOrUrl);
         }
         
@@ -290,13 +347,23 @@ function isConnected() {
     return sock && sock.user;
 }
 
+// ============================================
+// OBTER CÓDIGO DE PAREAMENTO ATUAL
+// ============================================
+function getPairingCode() {
+    return global.currentPairingCode || null;
+}
+
 module.exports = {
     startWhatsApp,
+    requestPairingCode,
+    renewPairingCode,
     sendTextMessage,
     sendButtonMessage,
     sendImageMessage,
     sendPdfMessage,
     sendListMessage,
     getSocket,
-    isConnected
+    isConnected,
+    getPairingCode
 };
