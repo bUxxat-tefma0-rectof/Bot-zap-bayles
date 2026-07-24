@@ -1,0 +1,9 @@
+# Esta pasta armazena fontes customizadas para geração de PDFs
+# 
+# Fontes que podem ser adicionadas:
+# - Roboto-Regular.ttf
+# - Roboto-Bold.ttf
+# - OpenSans-Regular.ttf
+# - OpenSans-Bold.ttf
+# 
+# As fontes são usadas pelo PDFKit para gerar os PDFs de credenciais
