@@ -36,8 +36,8 @@ app.get('/', (req, res) => {
 // ============================================
 app.post('/webhook/mercadopago', async (req, res) => {
     try {
-        const { mercadopagoService } = require('./services/mercadopago');
-        await mercadopagoService.processWebhook(req.body);
+        const { processWebhook } = require('./services/mercadopago');
+        await processWebhook(req.body);
         res.status(200).send('OK');
     } catch (error) {
         logger.error('Erro no webhook:', error);
