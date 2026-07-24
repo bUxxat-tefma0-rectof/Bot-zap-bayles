@@ -2,7 +2,7 @@
 // DOGUINHA STORE BOT - SERVIÇO MERCADO PAGO
 // ============================================
 
-const mercadopago = require('mercadopago');
+const { MercadoPagoConfig, Payment } = require('mercadopago');
 const { config } = require('../config/database');
 const logger = require('../utils/logger');
 const { generateId } = require('../utils/idGenerator');
@@ -11,9 +11,11 @@ const { addMinutes, formatDateTime } = require('../utils/dateUtils');
 // ============================================
 // CONFIGURAR MERCADO PAGO
 // ============================================
-mercadopago.configure({
-    access_token: config.mercadopago.accessToken
+const client = new MercadoPagoConfig({
+    accessToken: config.mercadopago.accessToken
 });
+
+const payment = new Payment(client);
 
 // ============================================
 // GERAR PIX
@@ -25,7 +27,7 @@ async function generatePix(amount, description = 'Recarga Doguinha Store') {
         const expirationMinutes = config.pix.expirationMinutes;
         const expirationDate = addMinutes(expirationMinutes);
         
-        const payment = {
+        const body = {
             transaction_amount: parseFloat(amount),
             description: description,
             payment_method_id: 'pix',
@@ -37,15 +39,15 @@ async function generatePix(amount, description = 'Recarga Doguinha Store') {
             date_of_expiration: expirationDate.toISOString()
         };
 
-        const response = await mercadopago.payment.create(payment);
+        const response = await payment.create({ body });
         
         const pixData = {
-            id: response.body.id.toString(),
-            qr_code: response.body.point_of_interaction.transaction_data.qr_code,
-            qr_code_base64: response.body.point_of_interaction.transaction_data.qr_code_base64,
-            pix_code: response.body.point_of_interaction.transaction_data.qr_code,
+            id: response.id.toString(),
+            qr_code: response.point_of_interaction.transaction_data.qr_code,
+            qr_code_base64: response.point_of_interaction.transaction_data.qr_code_base64,
+            pix_code: response.point_of_interaction.transaction_data.qr_code,
             amount: amount,
-            status: response.body.status,
+            status: response.status,
             expiration_date: expirationDate,
             created_at: new Date()
         };
@@ -65,15 +67,15 @@ async function generatePix(amount, description = 'Recarga Doguinha Store') {
 // ============================================
 async function checkPaymentStatus(paymentId) {
     try {
-        const response = await mercadopago.payment.findById(paymentId);
+        const response = await payment.get({ id: paymentId });
         
         return {
-            id: response.body.id.toString(),
-            status: response.body.status,
-            approved: response.body.status === 'approved',
-            rejected: response.body.status === 'rejected',
-            pending: response.body.status === 'pending',
-            expired: response.body.status === 'cancelled'
+            id: response.id.toString(),
+            status: response.status,
+            approved: response.status === 'approved',
+            rejected: response.status === 'rejected',
+            pending: response.status === 'pending',
+            expired: response.status === 'cancelled'
         };
 
     } catch (error) {
@@ -94,7 +96,6 @@ async function processWebhook(body) {
             const status = await checkPaymentStatus(paymentId);
             
             if (status.approved) {
-                // Processar pagamento aprovado
                 await handleApprovedPayment(paymentId);
             }
             
@@ -113,7 +114,15 @@ async function processWebhook(body) {
 async function generateQrCodeImage(qrCodeBase64) {
     try {
         const QRCode = require('qrcode');
-        const qrImagePath = `${config.storage.qrcodesPath}/pix_${Date.now()}.png`;
+        const fs = require('fs');
+        const path = require('path');
+        
+        const qrDir = config.storage.qrcodesPath;
+        if (!fs.existsSync(qrDir)) {
+            fs.mkdirSync(qrDir, { recursive: true });
+        }
+        
+        const qrImagePath = path.join(qrDir, `pix_${Date.now()}.png`);
         
         await QRCode.toFile(qrImagePath, qrCodeBase64, {
             type: 'png',
