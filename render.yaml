@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: doguinha-store-bot
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: WHATSAPP_NUMBER
+        sync: false
+      - key: BOT_NAME
+        sync: false
+      - key: ADMIN_NUMBER
+        sync: false
+      - key: MERCADOPAGO_ACCESS_TOKEN
+        sync: false
+      - key: MERCADOPAGO_PUBLIC_KEY
+        sync: false
+      - key: PORT
+        value: "3000"
+      - key: RENDER_EXTERNAL_URL
+        fromService:
+          name: doguinha-store-bot
+          type: web
+          property: hostname
+      - key: DATABASE_PATH
+        value: ./src/database/doguinha_store.db
+      - key: TELEGRAM_GROUP_LINK
+        sync: false
+      - key: SUPPORT_TELEGRAM_LINK
+        sync: false
+      - key: REFERRAL_BONUS_PERCENTAGE
+        value: "10"
+      - key: PIX_EXPIRATION_MINUTES
+        value: "30"
+      - key: NODE_ENV
+        value: production
+    autoDeploy: true
